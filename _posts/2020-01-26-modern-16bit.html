@@ -7,27 +7,27 @@ categories: [kapow]
 Nowadays, most x86 Assembly programs are intended to run in 64 bit or at least 32 bit environments. This means that most features specific to 16 bit development are now no longer supported. Thus, some workarounds related to this were needed in the development of <i>Kapow</i>.<br />
 </p>
 
-<div id="outline-container-org61c5734" class="outline-2">
-<h2 id="org61c5734">What is Real Mode?</h2>
-<div class="outline-text-2" id="text-org61c5734">
+<div id="outline-container-orge139362" class="outline-2">
+<h2 id="orge139362">What is Real Mode?</h2>
+<div class="outline-text-2" id="text-orge139362">
 <p>
 Whenever your x86 cpu boots up, it always starts up in <a href="https://wiki.osdev.org/Real_Mode">Real Mode</a>. In this mode, your cpu has access to only 16 bit instructions and registers, as well as one megabyte of RAM. In other words, the CPU behaves like an <a href="https://en.wikipedia.org/wiki/Intel_8086">1978 Intel 8086</a> with a much higher clock speed.<br />
 </p>
 </div>
 </div>
 
-<div id="outline-container-org1f3303e" class="outline-2">
-<h2 id="org1f3303e">Memory Segmentation</h2>
-<div class="outline-text-2" id="text-org1f3303e">
+<div id="outline-container-org025cdf3" class="outline-2">
+<h2 id="org025cdf3">Memory Segmentation</h2>
+<div class="outline-text-2" id="text-org025cdf3">
 <p>
 You might notice that in Real Mode we have access to a whole megabyte of RAM, but yet we are using 16 bit registers to address it. How is it possible to address one million bytes, if in 16 bits we can only represent 64 thousand distinct values? The answer to this question lies in Intel's solution to this problem, <a href="https://wiki.osdev.org/Segmentationhttps://wiki.osdev.org/Segmentation">Memory Segmentation</a>. This is where another register is used to represent an additional 4 bits for addressing. This gives us a total of 20 bits, enough to address one megabyte. In this model, every 64 kilobytes of RAM is referred to as one segment.<br />
 </p>
 </div>
 </div>
 
-<div id="outline-container-org1189862" class="outline-2">
-<h2 id="org1189862">Addressing Labels</h2>
-<div class="outline-text-2" id="text-org1189862">
+<div id="outline-container-orga082870" class="outline-2">
+<h2 id="orga082870">Addressing Labels</h2>
+<div class="outline-text-2" id="text-orga082870">
 <p>
 The main problem with using NASM in 16 bit code starts when you are trying to modify the value at a certain label. For example, consider the following code:<br />
 </p>
@@ -46,18 +46,18 @@ Normally, you would expect this to work. You could use the location at <code>var
 </div>
 </div>
 
-<div id="outline-container-orgfa7abc6" class="outline-2">
-<h2 id="orgfa7abc6">Bootlegged Effective Addressing</h2>
-<div class="outline-text-2" id="text-orgfa7abc6">
+<div id="outline-container-orgaa019a4" class="outline-2">
+<h2 id="orgaa019a4">Bootlegged Effective Addressing</h2>
+<div class="outline-text-2" id="text-orgaa019a4">
 <p>
 In order to solve this problem, it was necessary to define an area in memory where variables would be stored. This was done in the <code>game/var_locs.asm</code> file. Here, a base offset is defined, in this case <code>0xC000</code> (Which is an offset from the beginning of the segment where the game's executable resides), and subsequently the location of every single variable used by the game is defined. This also necessitates the initialization of each defined memory location, which is done in the respective file where the variables are used.<br />
 </p>
 </div>
 </div>
 
-<div id="outline-container-org2da9401" class="outline-2">
-<h2 id="org2da9401">Loading Sprites</h2>
-<div class="outline-text-2" id="text-org2da9401">
+<div id="outline-container-orgba201c7" class="outline-2">
+<h2 id="orgba201c7">Loading Sprites</h2>
+<div class="outline-text-2" id="text-orgba201c7">
 <p>
 The easiest solution to loading and using sprites would be something like this:<br />
 </p>
