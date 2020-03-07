@@ -1,0 +1,72 @@
+---
+layout: post
+title: Kapow - Bootloader (Part 3)
+categories: [kapow]
+---
+
+<p>
+When making an operating system, or a bootable game like <i>Kapow</i>, the <a href="https://wiki.osdev.org/Bootloader">Bootloader</a> is the first piece of code to run, and is responsible for loading the rest of the program (Or Kernel in the case of an OS) to memory.<br />
+</p>
+
+<div id="outline-container-orgb126dd4" class="outline-2">
+<h2 id="orgb126dd4">The Booting Process</h2>
+<div class="outline-text-2" id="text-orgb126dd4">
+<p>
+Whenever you start your computer from a storage device, such as a hard drive or a floppy disk, the BIOS loads the first 512 bytes in the storage medium into memory, at address <code>0x7c00</code>. From there, the loaded program can start executing instructions.<br />
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgfffc8b4" class="outline-2">
+<h2 id="orgfffc8b4"><i>Kapow</i>'s Bootloader</h2>
+<div class="outline-text-2" id="text-orgfffc8b4">
+<p>
+<i>Kapow</i>'s bootloader is entirely contained in the file <code>bootup/booter.asm</code>. Excluding a few parts that will be explained in their respective components, I will now detail its general operation.<br />
+</p>
+
+<p>
+It first loads the rest of the executable in the following way:<br />
+</p>
+<div class="org-src-container">
+<pre class="src src-nasm"><span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">ax</span>, game_start
+<span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">es</span>, <span style="color: #7fffd4;">ax</span>              <span style="color: #ff7f24; font-style: italic;">; segment address to copy to</span>
+<span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">ah</span>, <span style="color: #8470ff; font-weight: bold;">0x2</span>             <span style="color: #ff7f24; font-style: italic;">; read sectors from drive</span>
+<span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">al</span>, <span style="color: #8470ff; font-weight: bold;">128</span>             <span style="color: #ff7f24; font-style: italic;">; amount of sectors to read</span>
+<span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">ch</span>, <span style="color: #8470ff; font-weight: bold;">0</span>               <span style="color: #ff7f24; font-style: italic;">; cylinder</span>
+<span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">dh</span>, <span style="color: #8470ff; font-weight: bold;">0</span>               <span style="color: #ff7f24; font-style: italic;">; head</span>
+<span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">cl</span>, <span style="color: #8470ff; font-weight: bold;">2</span>               <span style="color: #ff7f24; font-style: italic;">; sector</span>
+<span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">dl</span>, <span style="color: #8470ff; font-weight: bold;">0x80</span>            <span style="color: #ff7f24; font-style: italic;">; disk</span>
+
+<span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">bx</span>, <span style="color: #8470ff; font-weight: bold;">0</span>               <span style="color: #ff7f24; font-style: italic;">; address to copy to</span>
+<span style="color: #b0c4de;">int</span> <span style="color: #8470ff; font-weight: bold;">0x13</span>
+</pre>
+</div>
+
+<p>
+Then, it sets up the <a href="https://wiki.osdev.org/PIT">PIT</a>, to call its interrupt approximately 100 times every second. This is done in the following way<br />
+</p>
+<div class="org-src-container">
+<pre class="src src-nasm">
+<span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">al</span>,<span style="color: #8470ff; font-weight: bold;">00110100b</span>                  <span style="color: #ff7f24; font-style: italic;">;channel 0, lobyte/hibyte, rate generator</span>
+<span style="color: #b0c4de;">out</span> <span style="color: #8470ff; font-weight: bold;">0x43</span>, <span style="color: #7fffd4;">al</span>
+
+<span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">ax</span>,PIT0_reload               <span style="color: #ff7f24; font-style: italic;">;ax = 16 bit reload value</span>
+<span style="color: #b0c4de;">out</span> <span style="color: #8470ff; font-weight: bold;">0x40</span>,<span style="color: #7fffd4;">al</span>                       <span style="color: #ff7f24; font-style: italic;">;Set low byte of PIT reload value</span>
+<span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">al</span>,<span style="color: #7fffd4;">ah</span>                         <span style="color: #ff7f24; font-style: italic;">;ax = high 8 bits of reload value</span>
+<span style="color: #b0c4de;">out</span> <span style="color: #8470ff; font-weight: bold;">0x40</span>,<span style="color: #7fffd4;">al</span>                       <span style="color: #ff7f24; font-style: italic;">;Set high byte of PIT reload value</span>
+
+</pre>
+</div>
+
+<p>
+The bootloader will then place some pointer values into what is called the <a href="https://wiki.osdev.org/IVT">IVT</a>. This is a table used in Real Mode in order to map <a href="https://en.wikipedia.org/wiki/Interrupthttps://en.wikipedia.org/wiki/Interrupt">interrupts</a> to different subroutines. In other words, whenever an interrupt is fired, the CPU will execute the subroutine whose address is in that interrupt's entry in the IVT. The bootloader will hook in the game's timer IRQ function (Which is for all practical purposes the game loop) in the following way:<br />
+</p>
+<div class="org-src-container">
+<pre class="src src-nasm"><span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">ax</span>, game_start      
+<span style="color: #b0c4de;">mov</span> [<span style="color: #7fffd4;">cs</span>:<span style="color: #8470ff; font-weight: bold;">0x1c</span>*<span style="color: #8470ff; font-weight: bold;">4+2</span>], <span style="color: #7fffd4;">ax</span>   <span style="color: #ff7f24; font-style: italic;">; move segment of game to IVT</span>
+<span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">ax</span>, game_tirq
+<span style="color: #b0c4de;">mov</span> [<span style="color: #7fffd4;">cs</span>:<span style="color: #8470ff; font-weight: bold;">0x1c</span>*<span style="color: #8470ff; font-weight: bold;">4</span>], <span style="color: #7fffd4;">ax</span>     <span style="color: #ff7f24; font-style: italic;">; move address of irq to IVT</span>
+</pre>
+</div>
+</div>
+</div>
