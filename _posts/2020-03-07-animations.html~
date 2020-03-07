@@ -1,0 +1,221 @@
+---
+layout: post
+title: Kapow - Animations (Part 6)
+---
+
+<p>
+The only real animation in <i>Kapow</i> is the bomb explosion animation, of which there can be a great number on the screen. The first part of this, is the storage of variables pertaining to each explosion.<br />
+</p>
+
+<div id="outline-container-orgadb2661" class="outline-2">
+<h2 id="orgadb2661">Storing explosion variables</h2>
+<div class="outline-text-2" id="text-orgadb2661">
+<p>
+The general structure of each stored explosion can be found in the <code>game/var_locs.asm</code> file. Here is the part of the file concerning this:<br />
+</p>
+<div class="org-src-container">
+<pre class="src src-nasm"><span style="color: #6495ed; font-style: italic;">%define</span> explosion_state bomb_y+<span style="color: #8470ff; font-weight: bold;">2</span>*number_of_bombs <span style="color: #ff7f24; font-style: italic;">;n of explosions elements, 2 bytes per element, fixed point with 8 bit fraction</span>
+<span style="color: #6495ed; font-style: italic;">%define</span> explosion_x explosion_state+<span style="color: #8470ff; font-weight: bold;">2</span>*number_of_explosions <span style="color: #ff7f24; font-style: italic;">;n of explosions elements, 2 bytes</span>
+<span style="color: #6495ed; font-style: italic;">%define</span> explosion_y explosion_x+<span style="color: #8470ff; font-weight: bold;">2</span>*number_of_explosions     <span style="color: #ff7f24; font-style: italic;">;n of explosions elements, 2 bytes</span>
+<span style="color: #6495ed; font-style: italic;">%define</span> explosion_start_index explosion_y+<span style="color: #8470ff; font-weight: bold;">2</span>*number_of_explosions <span style="color: #ff7f24; font-style: italic;">; 1 byte, contains the index of the first explosion that is still active</span>
+<span style="color: #6495ed; font-style: italic;">%define</span> explosion_end_index explosion_start_index+<span style="color: #8470ff; font-weight: bold;">1</span>              <span style="color: #ff7f24; font-style: italic;">; 1 byte, contains the index of the position after the last one that should be rendered</span>
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org687c05d" class="outline-2">
+<h2 id="org687c05d">Creating explosions</h2>
+<div class="outline-text-2" id="text-org687c05d">
+<p>
+Practically all of the code related to the non-graphical parts of the explosions are in <code>game/explosion.asm</code>.<br />
+</p>
+
+<p>
+The explosions are stored in a queue implemented using an array. If there is no more space in the queue, no explosions will be able to be added until an explosion finishes.<br />
+</p>
+<div class="org-src-container">
+<pre class="src src-nasm"><span style="color: #ff7f24; font-style: italic;">; Starts an explosion animation where a bomb is</span>
+<span style="color: #ff7f24; font-style: italic;">; ax - bomb index</span>
+<span style="color: #00fa9a; font-size: 110%; font-weight: bold;">explode_bomb</span>:
+        <span style="color: #b0c4de;">push</span> <span style="color: #7fffd4;">bp</span>
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">bp</span>, <span style="color: #7fffd4;">sp</span>
+
+        <span style="color: #b0c4de;">push</span> <span style="color: #7fffd4;">si</span>
+        <span style="color: #b0c4de;">push</span> <span style="color: #7fffd4;">di</span>
+        <span style="color: #b0c4de;">push</span> <span style="color: #7fffd4;">bx</span>
+
+
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">si</span>, <span style="color: #7fffd4;">ax</span>
+
+        <span style="color: #b0c4de;">xor</span> <span style="color: #7fffd4;">bx</span>, <span style="color: #7fffd4;">bx</span>
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">bl</span>, [<span style="color: #7fffd4;">cs</span>:explosion_end_index]
+        <span style="color: #b0c4de;">push</span> <span style="color: #7fffd4;">bx</span>
+        <span style="color: #b0c4de;">inc</span> <span style="color: #7fffd4;">bl</span>
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">ax</span>, <span style="color: #8470ff; font-weight: bold;">0</span>
+        <span style="color: #b0c4de;">cmp</span> <span style="color: #7fffd4;">bl</span>, number_of_explosions
+        <span style="color: #b0c4de;">cmove</span> <span style="color: #7fffd4;">bx</span>, <span style="color: #7fffd4;">ax</span>
+        <span style="color: #b0c4de;">cmp</span> <span style="color: #7fffd4;">bl</span>, [<span style="color: #7fffd4;">cs</span>:explosion_start_index]
+        <span style="color: #b0c4de;">pop</span> <span style="color: #7fffd4;">bx</span>
+        <span style="color: #b0c4de;">je</span> expb_e
+
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">di</span>, <span style="color: #7fffd4;">bx</span>
+
+        <span style="color: #b0c4de;">inc</span> <span style="color: #63b8ff;">byte</span> [<span style="color: #7fffd4;">cs</span>:explosion_end_index]
+
+        <span style="color: #b0c4de;">cmp</span> <span style="color: #7fffd4;">di</span>, number_of_explosions-<span style="color: #8470ff; font-weight: bold;">1</span>
+        <span style="color: #b0c4de;">jne</span> expb_c
+        <span style="color: #b0c4de;">mov</span> <span style="color: #63b8ff;">byte</span> [<span style="color: #7fffd4;">cs</span>:explosion_end_index], <span style="color: #8470ff; font-weight: bold;">0</span>
+
+<span style="color: #00fa9a; font-size: 110%; font-weight: bold;">expb_c</span>: 
+
+        <span style="color: #b0c4de;">shl</span> <span style="color: #7fffd4;">di</span>, <span style="color: #8470ff; font-weight: bold;">1</span>
+        <span style="color: #b0c4de;">shl</span> <span style="color: #7fffd4;">si</span>, <span style="color: #8470ff; font-weight: bold;">1</span>
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">ax</span>, [<span style="color: #7fffd4;">cs</span>:bomb_x+<span style="color: #7fffd4;">si</span>]
+        <span style="color: #b0c4de;">mov</span> [<span style="color: #7fffd4;">cs</span>:explosion_x+<span style="color: #7fffd4;">di</span>], <span style="color: #7fffd4;">ax</span>
+
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">ax</span>, [<span style="color: #7fffd4;">cs</span>:bomb_y+<span style="color: #7fffd4;">si</span>]
+        <span style="color: #b0c4de;">mov</span> [<span style="color: #7fffd4;">cs</span>:explosion_y+<span style="color: #7fffd4;">di</span>], <span style="color: #7fffd4;">ax</span>
+
+        <span style="color: #b0c4de;">mov</span> <span style="color: #63b8ff;">word</span> [<span style="color: #7fffd4;">cs</span>:explosion_state+<span style="color: #7fffd4;">di</span>], <span style="color: #8470ff; font-weight: bold;">0</span>
+
+
+<span style="color: #00fa9a; font-size: 110%; font-weight: bold;">expb_e</span>:
+        <span style="color: #b0c4de;">pop</span> <span style="color: #7fffd4;">bx</span>
+        <span style="color: #b0c4de;">pop</span> <span style="color: #7fffd4;">di</span>
+        <span style="color: #b0c4de;">pop</span> <span style="color: #7fffd4;">si</span>
+
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">sp</span>, <span style="color: #7fffd4;">bp</span>
+        <span style="color: #b0c4de;">pop</span> <span style="color: #7fffd4;">bp</span>
+        <span style="color: #b0c4de;">ret</span>
+</pre>
+</div>
+<p>
+As you might be able to tell, this subroutine takes a single index as parameter. This is because in order to initialize the position of the explosion, it will extract this data from the bomb in the array of bombs at that index.<br />
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgea4d9d3" class="outline-2">
+<h2 id="orgea4d9d3">Updating explosions</h2>
+<div class="outline-text-2" id="text-orgea4d9d3">
+<p>
+Each tick, the explosion will also be updated. This is done by iterating through the array of explosions, and adding a the speed of the animations to each. The frame of each explosion is then calculated as the upper 8 bits explosion state (As this is a <a href="http://www-inst.eecs.berkeley.edu/~cs61c/sp06/handout/fixedpt.html">fixed-point integer</a>). Finally, if the explosion has run through all of its frames, it is terminated. The related code is as follows:<br />
+</p>
+<div class="org-src-container">
+<pre class="src src-nasm"><span style="color: #00fa9a; font-size: 110%; font-weight: bold;">update_explosion</span>:
+        <span style="color: #b0c4de;">push</span> <span style="color: #7fffd4;">bp</span>
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">bp</span>, <span style="color: #7fffd4;">sp</span>
+
+        <span style="color: #b0c4de;">xor</span> <span style="color: #7fffd4;">bx</span>, <span style="color: #7fffd4;">bx</span>
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">bl</span>, [<span style="color: #7fffd4;">cs</span>:explosion_start_index]
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">di</span>, <span style="color: #7fffd4;">bx</span>
+
+        <span style="color: #b0c4de;">xor</span> <span style="color: #7fffd4;">cx</span>, <span style="color: #7fffd4;">cx</span>
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">cl</span>, [<span style="color: #7fffd4;">cs</span>:explosion_end_index]
+
+<span style="color: #00fa9a; font-size: 110%; font-weight: bold;">up_ex_l</span>:
+        <span style="color: #b0c4de;">cmp</span> <span style="color: #7fffd4;">di</span>, <span style="color: #7fffd4;">cx</span>
+        <span style="color: #b0c4de;">je</span> up_ex_e
+
+        <span style="color: #b0c4de;">shl</span> <span style="color: #7fffd4;">di</span>, <span style="color: #8470ff; font-weight: bold;">1</span>
+
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">ax</span>, [<span style="color: #7fffd4;">cs</span>:explosion_state+<span style="color: #7fffd4;">di</span>]
+        <span style="color: #b0c4de;">add</span> <span style="color: #7fffd4;">ax</span>, explosion_speed
+        <span style="color: #b0c4de;">cmp</span> <span style="color: #7fffd4;">ax</span>, explosion_frames &lt;&lt; <span style="color: #8470ff; font-weight: bold;">8</span>
+        <span style="color: #b0c4de;">jb</span> up_ex_c
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">ax</span>, <span style="color: #8470ff; font-weight: bold;">0</span>
+        <span style="color: #b0c4de;">inc</span> <span style="color: #63b8ff;">byte</span> [<span style="color: #7fffd4;">cs</span>:explosion_start_index]
+        <span style="color: #b0c4de;">xor</span> <span style="color: #7fffd4;">dx</span>, <span style="color: #7fffd4;">dx</span>
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">dl</span>, [<span style="color: #7fffd4;">cs</span>:explosion_start_index]
+        <span style="color: #b0c4de;">cmp</span> <span style="color: #7fffd4;">dl</span>, number_of_explosions
+        <span style="color: #b0c4de;">jne</span> up_ex_c
+        <span style="color: #b0c4de;">mov</span> <span style="color: #63b8ff;">byte</span> [<span style="color: #7fffd4;">cs</span>:explosion_start_index], <span style="color: #8470ff; font-weight: bold;">0</span>
+<span style="color: #00fa9a; font-size: 110%; font-weight: bold;">up_ex_c</span>:
+        <span style="color: #b0c4de;">mov</span> [<span style="color: #7fffd4;">cs</span>:explosion_state+<span style="color: #7fffd4;">di</span>], <span style="color: #7fffd4;">ax</span>
+        <span style="color: #b0c4de;">shr</span> <span style="color: #7fffd4;">di</span>, <span style="color: #8470ff; font-weight: bold;">1</span>
+
+        <span style="color: #b0c4de;">inc</span> <span style="color: #7fffd4;">di</span>
+        <span style="color: #b0c4de;">cmp</span> <span style="color: #7fffd4;">di</span>, number_of_explosions
+        <span style="color: #b0c4de;">jne</span> up_ex_l
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">di</span>, <span style="color: #8470ff; font-weight: bold;">0</span>
+        <span style="color: #b0c4de;">jmp</span> up_ex_l
+
+
+<span style="color: #00fa9a; font-size: 110%; font-weight: bold;">up_ex_e</span>:        
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">sp</span>, <span style="color: #7fffd4;">bp</span>
+        <span style="color: #b0c4de;">pop</span> <span style="color: #7fffd4;">bp</span>
+        <span style="color: #b0c4de;">ret</span>
+
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org24ca4f2" class="outline-2">
+<h2 id="org24ca4f2">Drawing explosions</h2>
+<div class="outline-text-2" id="text-org24ca4f2">
+<p>
+The code for drawing the explosions is simple. The program simply iterates through the queue and draws each explosion at its respective location in the correct frame. The code for this resides in <code>game/renderer.asm</code> and looks as follows:<br />
+</p>
+
+<div class="org-src-container">
+<pre class="src src-nasm"><span style="color: #00fa9a; font-size: 110%; font-weight: bold;">render_explosions</span>:
+        <span style="color: #b0c4de;">push</span> <span style="color: #7fffd4;">bp</span>
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">bp</span>, <span style="color: #7fffd4;">sp</span>
+
+        <span style="color: #b0c4de;">xor</span> <span style="color: #7fffd4;">ax</span>, <span style="color: #7fffd4;">ax</span>
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">al</span>, [<span style="color: #7fffd4;">cs</span>:explosion_start_index]
+        <span style="color: #b0c4de;">xor</span> <span style="color: #7fffd4;">di</span>, <span style="color: #7fffd4;">di</span>
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">di</span>, <span style="color: #7fffd4;">ax</span>              <span style="color: #ff7f24; font-style: italic;">; di contains start index</span>
+
+        <span style="color: #b0c4de;">xor</span> <span style="color: #7fffd4;">cx</span>, <span style="color: #7fffd4;">cx</span>
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">cl</span>, [<span style="color: #7fffd4;">cs</span>:explosion_end_index] <span style="color: #ff7f24; font-style: italic;">; cx contains end index</span>
+
+
+<span style="color: #00fa9a; font-size: 110%; font-weight: bold;">r_ex_l</span>:
+        <span style="color: #b0c4de;">cmp</span> <span style="color: #7fffd4;">di</span>, <span style="color: #7fffd4;">cx</span>
+        <span style="color: #b0c4de;">je</span> r_ex_e
+
+
+
+        <span style="color: #b0c4de;">push</span> <span style="color: #7fffd4;">cx</span>
+        <span style="color: #b0c4de;">push</span> <span style="color: #7fffd4;">di</span>
+
+        <span style="color: #b0c4de;">shl</span> <span style="color: #7fffd4;">di</span>, <span style="color: #8470ff; font-weight: bold;">1</span>               <span style="color: #ff7f24; font-style: italic;">; Multiply di by 2</span>
+
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">dx</span>, bomb_width*bomb_height
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">ax</span>, [<span style="color: #7fffd4;">cs</span>:explosion_state+<span style="color: #7fffd4;">di</span>]
+        <span style="color: #b0c4de;">shr</span> <span style="color: #7fffd4;">ax</span>, <span style="color: #8470ff; font-weight: bold;">8</span>
+        <span style="color: #b0c4de;">mul</span> <span style="color: #7fffd4;">dx</span>
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">dx</span>, expls_loc
+        <span style="color: #b0c4de;">add</span> <span style="color: #7fffd4;">dx</span>, <span style="color: #7fffd4;">ax</span>
+
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">ax</span>, [<span style="color: #7fffd4;">cs</span>:explosion_y+<span style="color: #7fffd4;">di</span>]
+        <span style="color: #b0c4de;">shr</span> <span style="color: #7fffd4;">ax</span>, <span style="color: #8470ff; font-weight: bold;">4</span>
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">bx</span>, [<span style="color: #7fffd4;">cs</span>:explosion_x+<span style="color: #7fffd4;">di</span>]
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">ch</span>, bomb_width
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">cl</span>, bomb_height
+        <span style="color: #b0c4de;">call</span> draw_sprite
+
+        <span style="color: #b0c4de;">pop</span> <span style="color: #7fffd4;">di</span>
+        <span style="color: #b0c4de;">pop</span> <span style="color: #7fffd4;">cx</span>
+
+
+        <span style="color: #b0c4de;">inc</span> <span style="color: #7fffd4;">di</span>
+
+        <span style="color: #b0c4de;">cmp</span> <span style="color: #7fffd4;">di</span>, number_of_explosions
+        <span style="color: #b0c4de;">jne</span> r_ex_l
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">di</span>, <span style="color: #8470ff; font-weight: bold;">0</span>               <span style="color: #ff7f24; font-style: italic;">; di has reached the end of the array, it has to loop around</span>
+        <span style="color: #b0c4de;">jmp</span> r_ex_l
+
+
+<span style="color: #00fa9a; font-size: 110%; font-weight: bold;">r_ex_e</span>:
+        <span style="color: #b0c4de;">mov</span> <span style="color: #7fffd4;">sp</span>, <span style="color: #7fffd4;">bp</span>
+        <span style="color: #b0c4de;">pop</span> <span style="color: #7fffd4;">bp</span>
+        <span style="color: #b0c4de;">ret</span>
+
+</pre>
+</div>
+</div>
+</div>

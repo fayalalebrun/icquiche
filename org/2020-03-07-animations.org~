@@ -1,0 +1,10 @@
+#+OPTIONS: toc:nil num:0 \n:true
+#+STARTUP: showall indent
+#+STARTUP: hidestars
+#+BEGIN_export html
+---
+layout: post
+title: Kapow - Creating Sprites for Mode 13h (Part 5)
+---
+#+END_export
+

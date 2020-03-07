@@ -1,0 +1,87 @@
+#+OPTIONS: toc:nil num:0 \n:true
+#+STARTUP: showall indent
+#+STARTUP: hidestars
+#+BEGIN_export html
+---
+layout: post
+title: Kapow - Creating Sprites for Mode 13h (Part 5)
+---
+#+END_export
+
+Sprite creation is normally a straight forward process. Draw some sprites in GIMP, export them, load them in. However, when making a bootloaded game in Assembly using Mode 13h, a few problems arise.
+
+* Problems
+- No available libraries means that if you want to support a certain file format, you have to write the procedures needed to convert that into something you can send to the framebuffer.
+- Mode 13h works in 256 indexed-color mode, which is not trivial to work with in something like GIMP.
+- Perhaps most importantly, Mode 13h does not provide square pixels. 320x200 is stretched into 4:3 aspect ratio. So what you would see in something like GIMP would not be the same as what is drawn onto the screen.
+
+* Asset production pipeline
+Making assets and preparing them for usage in /Kapow/ consists of three steps:
+- Creating graphics
+- Converting image to BMP
+- Converting BMP to easy-to-parse binary format.
+
+** Creating graphics
+Graphics for /Kapow/ were created in a program called Deluxe Paint.
+
+#+BEGIN_export html
+<img src="/assets/dp_000.png" style="margin-bottom:2vh;"/>
+#+END_export
+
+
+Deluxe Paint was one of the most popular programs for sprite creation in the early 90's. In fact, it still accomplishes this quite well. It does not suffer from the problem of pixels having the incorrect aspect ratio, as the pixels are actually displayed in Mode 13h, and the program is specifically tailored for creating sprites for this mode.
+
+There is still a problem, however. The most modern image format Deluxe Paint can support is PCX.
+
+** From PCX to BMP
+PCX is not a very ideal image format for our purposes. Firstly, it is quite outdated, and secondly it is RLE encoded, which makes it slightly more complicated to decompress. This is easily fixed by a single line in the ~Makefile~, which uses the ~convert~ utility in order to convert each image from PCX to uncompressed BMP:
+#+BEGIN_SRC makefile
+convert -compress none assets/$(1).PCX out/assets/$(1).bmp
+#+END_SRC
+
+** From BMP to Binary
+BMP is as simple as it gets with image formats. However, there are two problems:
+- BMP contains a header as well as palette information, which represents useless data for us. We want to conserve as much memory as we can.
+- The pixels are stored from left to right, from bottom to top. Having this representation would complicate the routines to draw sprites onto the screen.
+Thus, in the interest of saving space and preventing headaches, the files are all converted into a binary format. This happens in the next line of the Makefile:
+#+BEGIN_SRC makefile
+out/conv_asset.o out/assets/$(1).bmp out/assets/$(1).bin $(2) $(3)
+#+END_SRC
+This line calls a compiled C script, which can be found in ~src/assets/conv_asset.c~. Here is the most important part of the script, annotated:
+#+BEGIN_SRC c
+  struct BMPHeader head; // Creates a struct of type BMPHeader (defined earlier) to hold the header information
+
+  fread(&head, sizeof(head), 1, source); // Reads header information into the header struct
+
+  skip_bytes(head.offset-sizeof(head), source); // Goes to the part of the file where the pixel data is stored
+  
+
+  char out[height][width]; // Creates an array to hold the pixel data
+
+  // The next part reads from the BMP in the way that the data is stored
+  for(int i = height-1; i >= 0; i--){ // From bottom to top
+    for(int z = 0; z < width; z++){ //From left to right
+      out[i][z] = fgetc(source);
+    }
+  }
+  
+  // This part writes back to the new file, now stored in a more regular way
+  for(int i = 0; i < height; i++){ // From top to bottom
+    for(int z = 0; z < width; z++){ // From left to right
+      fputc(out[i][z], output);
+    }
+  }
+#+END_SRC
+** Storing the sprites
+Finally the ~Makefile~ writes to the disk image, making the data available to be used in the game.
+#+BEGIN_SRC makefile
+cat out/assets/$(1).bin >> out/HD.img
+#+END_SRC
+* Extracting the palette
+The palette is extracted in a very similar way to how image data is extracted. However, this only has to be done once, due to how only a single palette is needed for all of the images. The relevant lines in the ~Makefile~ are the following:
+#+BEGIN_SRC makefile
+        gcc -o out/extract_palette.o src/assets/extract_palette.c
+	convert -compress none assets/PALETTE.PCX out/assets/PALETTE.bmp
+	out/extract_palette.o out/assets/PALETTE.bmp out/assets/palette.bin
+	cat out/assets/palette.bin >> out/HD.img
+#+END_SRC

@@ -1,0 +1,53 @@
+#+OPTIONS: toc:nil num:0 \n:true
+#+STARTUP: showall indent
+#+STARTUP: hidestars
+#+BEGIN_export html
+---
+layout: post
+title: Kapow - Bootloader (Part 3)
+---
+#+END_export
+
+When making an operating system, or a bootable game like /Kapow/, the [[https://wiki.osdev.org/Bootloader][Bootloader]] is the first piece of code to run, and is responsible for loading the rest of the program (Or Kernel in the case of an OS) to memory.
+
+* The Booting Process
+Whenever you start your computer from a storage device, such as a hard drive or a floppy disk, the BIOS loads the first 512 bytes in the storage medium into memory, at address ~0x7c00~. From there, the loaded program can start executing instructions.
+
+* /Kapow/'s Bootloader
+/Kapow/'s bootloader is entirely contained in the file ~bootup/booter.asm~. Excluding a few parts that will be explained in their respective components, I will now detail its general operation.
+
+It first loads the rest of the executable in the following way:
+#+BEGIN_SRC nasm
+	mov ax, game_start
+	mov es, ax		; segment address to copy to
+	mov ah, 0x2 		; read sectors from drive
+	mov al, 128		; amount of sectors to read
+	mov ch, 0		; cylinder
+	mov dh, 0		; head
+	mov cl, 2		; sector
+	mov dl, 0x80		; disk
+
+	mov bx, 0		; address to copy to
+	int 0x13
+#+END_SRC
+
+Then, it sets up the [[https://wiki.osdev.org/PIT][PIT]], to call its interrupt approximately 100 times every second. This is done in the following way
+#+BEGIN_SRC nasm
+
+        mov al,00110100b                  ;channel 0, lobyte/hibyte, rate generator
+	out 0x43, al
+	
+	mov ax,PIT0_reload	         ;ax = 16 bit reload value
+	out 0x40,al                       ;Set low byte of PIT reload value
+	mov al,ah                         ;ax = high 8 bits of reload value
+	out 0x40,al                       ;Set high byte of PIT reload value
+	
+#+END_SRC
+
+The bootloader will then place some pointer values into what is called the [[https://wiki.osdev.org/IVT][IVT]]. This is a table used in Real Mode in order to map [[https://en.wikipedia.org/wiki/Interrupthttps://en.wikipedia.org/wiki/Interrupt][interrupts]] to different subroutines. In other words, whenever an interrupt is fired, the CPU will execute the subroutine whose address is in that interrupt's entry in the IVT. The bootloader will hook in the game's timer IRQ function (Which is for all practical purposes the game loop) in the following way:
+#+BEGIN_SRC nasm
+	mov ax, game_start	
+	mov [cs:0x1c*4+2], ax	; move segment of game to IVT
+	mov ax, game_tirq
+	mov [cs:0x1c*4], ax	; move address of irq to IVT
+#+END_SRC

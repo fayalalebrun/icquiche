@@ -1,0 +1,146 @@
+---
+layout: post
+title: Kapow - Making a Game in Real-Mode x86 Assembly (Part 1)
+categories: [kapow]
+---
+<div id="outline-container-org19543cc" class="outline-2">
+<h2 id="org19543cc">Introduction</h2>
+<div class="outline-text-2" id="text-org19543cc">
+<p>
+<i>Kapow</i> is a remake of <i>Kaboom!</i> (1981) for the Atari 2600. It is made to run on an x86 machine without an operating system, and does so exclusively in 16 bit real-mode. It was originally made as a bonus assignment for the class CSE1400 at TU Delft. The source code is available at <a href="https://github.com/fayalalebrun/kapow">Github</a>.<br />
+</p>
+</div>
+</div>
+<div id="outline-container-org0617103" class="outline-2">
+<h2 id="org0617103">Assumptions</h2>
+<div class="outline-text-2" id="text-org0617103">
+<p>
+In these posts, I will assume that you grasp the basics of either x86 assembly or some other assembly language, and thus I won't spend any time explaining this.<br />
+</p>
+</div>
+</div>
+<div id="outline-container-org6e78009" class="outline-2">
+<h2 id="org6e78009">Tooling</h2>
+<div class="outline-text-2" id="text-org6e78009">
+<ul class="org-ul">
+<li><a href="https://nasm.us/">NASM</a>: Assembler used to transform the source into binary.<br /></li>
+<li><a href="https://www.qemu.org/">QEMU</a>: x86 Emulator used in order to run and debug the program.<br /></li>
+<li><a href="https://www.dosbox.com/">DOSBox</a>: DOS emulator used in order to run <i>Deluxe Paint</i>, which was needed to create Mode 13h compatible assets.<br /></li>
+</ul>
+</div>
+</div>
+<div id="outline-container-org25c2089" class="outline-2">
+<h2 id="org25c2089">Program Structure</h2>
+<div class="outline-text-2" id="text-org25c2089">
+</div>
+<div id="outline-container-org06d2aeb" class="outline-3">
+<h3 id="org06d2aeb">Bootloader</h3>
+<div class="outline-text-3" id="text-org06d2aeb">
+<p>
+This is the part of the program which takes care of setting the correct video mode, loading the data into memory, setting the correct timer rate, and finally jumping into the main program.<br />
+</p>
+<ul class="org-ul">
+<li>Related files: bootup/booter.asm<br /></li>
+</ul>
+</div>
+</div>
+<div id="outline-container-orgedc4fb6" class="outline-3">
+<h3 id="orgedc4fb6">Initialization and main loop</h3>
+<div class="outline-text-3" id="text-orgedc4fb6">
+<p>
+Here all of the game's subsystems are started, and the main loop can be found at <b>timer<sub>irq</sub></b><br />
+</p>
+<ul class="org-ul">
+<li>Related files: game/game.asm<br /></li>
+</ul>
+</div>
+</div>
+<div id="outline-container-org5aa34e2" class="outline-3">
+<h3 id="org5aa34e2">Stage Handling</h3>
+<div class="outline-text-3" id="text-org5aa34e2">
+<p>
+Depending on the current state of the game, different things must be rendered, and likewise the player's input must be handled differently. This part takes care of these two things for each stage, providing initialization and main loops for each stage.<br />
+</p>
+<ul class="org-ul">
+<li>Related files: game/stage.asm<br /></li>
+</ul>
+</div>
+</div>
+<div id="outline-container-org5d9ec2f" class="outline-3">
+<h3 id="org5d9ec2f">Logic</h3>
+<div class="outline-text-3" id="text-org5d9ec2f">
+<p>
+Checks for collisions between paddle and bombs, updates the bomber and bombs. Handles paddle player input.<br />
+</p>
+<ul class="org-ul">
+<li>Related files: game/paddle.asm, game/bombs.asm, game/bomber.asm, game/collision_detection.asm<br /></li>
+</ul>
+</div>
+</div>
+<div id="outline-container-orgdc22034" class="outline-3">
+<h3 id="orgdc22034">Sound</h3>
+<div class="outline-text-3" id="text-orgdc22034">
+<p>
+Handles playing of simple PC Speaker sounds and does so with the correct duration.<br />
+</p>
+<ul class="org-ul">
+<li>Related files: game/sound.asm<br /></li>
+</ul>
+</div>
+</div>
+<div id="outline-container-orgbe8e3c5" class="outline-3">
+<h3 id="orgbe8e3c5">Renderer</h3>
+<div class="outline-text-3" id="text-orgbe8e3c5">
+<p>
+Contains all of the functions for rendering basic things like sprites to the screen, as well as takes care of rendering all of the elements of the game.<br />
+</p>
+<ul class="org-ul">
+<li>Related files: game/renderer.asm, game/2dgfx.asm<br /></li>
+</ul>
+</div>
+</div>
+<div id="outline-container-orge2efacb" class="outline-3">
+<h3 id="orge2efacb">Input handling</h3>
+<div class="outline-text-3" id="text-orge2efacb">
+<p>
+Keeps track of whether a key is pressed at any given moment, for other functions to employ.<br />
+</p>
+<ul class="org-ul">
+<li>Related files: game/keyboard.asm<br /></li>
+</ul>
+</div>
+</div>
+<div id="outline-container-orgd0ee774" class="outline-3">
+<h3 id="orgd0ee774">Score keeping</h3>
+<div class="outline-text-3" id="text-orgd0ee774">
+<p>
+Continually updates the score, as well as the top score, using both a doubleword and BCD format.<br />
+</p>
+<ul class="org-ul">
+<li>Related files: game/score.asm<br /></li>
+</ul>
+</div>
+</div>
+<div id="outline-container-orgcddbe87" class="outline-3">
+<h3 id="orgcddbe87">Animation system</h3>
+<div class="outline-text-3" id="text-orgcddbe87">
+<p>
+Creates and continually updates the explosion animations on screen.<br />
+</p>
+<ul class="org-ul">
+<li>Related files: game/explosion.asm<br /></li>
+</ul>
+</div>
+</div>
+<div id="outline-container-orgd45217a" class="outline-3">
+<h3 id="orgd45217a">Game constants and variables</h3>
+<div class="outline-text-3" id="text-orgd45217a">
+<p>
+Keeps track of game constants and the location of various variables, as well as the location of sprites.<br />
+</p>
+<ul class="org-ul">
+<li>Related files: game/game_constants.asm, game/var_locs.asm, game/sprite_constants.asm<br /></li>
+</ul>
+</div>
+</div>
+</div>

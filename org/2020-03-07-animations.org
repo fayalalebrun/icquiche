@@ -1,0 +1,194 @@
+#+OPTIONS: toc:nil num:0 \n:true
+#+STARTUP: showall indent
+#+STARTUP: hidestars
+#+BEGIN_export html
+---
+layout: post
+title: Kapow - Animations (Part 6)
+categories: [kapow]
+---
+#+END_export
+
+The only real animation in /Kapow/ is the bomb explosion animation, of which there can be a great number on the screen. The first part of this, is the storage of variables pertaining to each explosion.
+
+* Storing explosion variables
+The general structure of each stored explosion can be found in the ~game/var_locs.asm~ file. Here is the part of the file concerning this:
+#+BEGIN_SRC nasm
+%define explosion_state bomb_y+2*number_of_bombs ;n of explosions elements, 2 bytes per element, fixed point with 8 bit fraction
+%define explosion_x explosion_state+2*number_of_explosions ;n of explosions elements, 2 bytes
+%define explosion_y explosion_x+2*number_of_explosions	   ;n of explosions elements, 2 bytes
+%define explosion_start_index explosion_y+2*number_of_explosions ; 1 byte, contains the index of the first explosion that is still active
+%define explosion_end_index explosion_start_index+1		 ; 1 byte, contains the index of the position after the last one that should be rendered
+#+END_SRC
+
+* Creating explosions
+Practically all of the code related to the non-graphical parts of the explosions are in ~game/explosion.asm~. 
+
+The explosions are stored in a queue implemented using an array. If there is no more space in the queue, no explosions will be able to be added until an explosion finishes.
+#+BEGIN_SRC nasm
+; Starts an explosion animation where a bomb is
+; ax - bomb index
+explode_bomb:
+	push bp
+	mov bp, sp
+
+	push si
+	push di
+	push bx
+
+	
+	mov si, ax
+	
+	xor bx, bx
+	mov bl, [cs:explosion_end_index]
+	push bx
+	inc bl
+	mov ax, 0
+	cmp bl, number_of_explosions
+	cmove bx, ax
+	cmp bl, [cs:explosion_start_index]
+	pop bx
+	je expb_e
+
+	mov di, bx
+	
+	inc byte [cs:explosion_end_index]
+
+	cmp di, number_of_explosions-1
+	jne expb_c
+	mov byte [cs:explosion_end_index], 0
+
+expb_c:	
+
+	shl di, 1
+	shl si, 1
+	mov ax, [cs:bomb_x+si]
+	mov [cs:explosion_x+di], ax
+
+	mov ax, [cs:bomb_y+si]
+	mov [cs:explosion_y+di], ax
+
+	mov word [cs:explosion_state+di], 0
+
+
+expb_e:
+	pop bx
+	pop di
+	pop si
+	
+	mov sp, bp
+	pop bp
+	ret
+#+END_SRC
+As you might be able to tell, this subroutine takes a single index as parameter. This is because in order to initialize the position of the explosion, it will extract this data from the bomb in the array of bombs at that index.
+
+* Updating explosions
+
+Each tick, the explosion will also be updated. This is done by iterating through the array of explosions, and adding a the speed of the animations to each. The frame of each explosion is then calculated as the upper 8 bits explosion state (As this is a [[http://www-inst.eecs.berkeley.edu/~cs61c/sp06/handout/fixedpt.html][fixed-point integer]]). Finally, if the explosion has run through all of its frames, it is terminated. The related code is as follows:
+#+BEGIN_SRC nasm
+update_explosion:
+	push bp
+	mov bp, sp
+
+	xor bx, bx
+	mov bl, [cs:explosion_start_index]
+	mov di, bx
+
+	xor cx, cx
+	mov cl, [cs:explosion_end_index]
+
+up_ex_l:
+	cmp di, cx
+	je up_ex_e
+
+	shl di, 1
+
+	mov ax, [cs:explosion_state+di]
+	add ax, explosion_speed
+	cmp ax, explosion_frames << 8
+	jb up_ex_c
+	mov ax, 0
+	inc byte [cs:explosion_start_index]
+	xor dx, dx
+	mov dl, [cs:explosion_start_index]
+	cmp dl, number_of_explosions
+	jne up_ex_c
+	mov byte [cs:explosion_start_index], 0
+up_ex_c:
+	mov [cs:explosion_state+di], ax
+	shr di, 1
+	
+	inc di
+	cmp di, number_of_explosions
+	jne up_ex_l
+	mov di, 0
+	jmp up_ex_l
+
+
+up_ex_e:	
+	mov sp, bp
+	pop bp
+	ret
+
+#+END_SRC
+
+* Drawing explosions
+The code for drawing the explosions is simple. The program simply iterates through the queue and draws each explosion at its respective location in the correct frame. The code for this resides in ~game/renderer.asm~ and looks as follows:
+
+#+BEGIN_SRC nasm
+render_explosions:
+	push bp
+	mov bp, sp
+
+	xor ax, ax
+	mov al, [cs:explosion_start_index]
+	xor di, di
+	mov di, ax 		; di contains start index
+
+	xor cx, cx
+	mov cl, [cs:explosion_end_index] ; cx contains end index
+
+
+r_ex_l:
+	cmp di, cx
+	je r_ex_e
+
+	
+	
+	push cx
+	push di
+
+	shl di, 1		; Multiply di by 2
+
+	mov dx, bomb_width*bomb_height
+	mov ax, [cs:explosion_state+di]
+	shr ax, 8
+	mul dx
+	mov dx, expls_loc
+	add dx, ax
+
+	mov ax, [cs:explosion_y+di]
+	shr ax, 4
+	mov bx, [cs:explosion_x+di]
+	mov ch, bomb_width
+	mov cl, bomb_height
+	call draw_sprite
+
+	pop di
+	pop cx
+
+	
+	inc di
+	
+	cmp di, number_of_explosions
+	jne r_ex_l
+	mov di, 0		; di has reached the end of the array, it has to loop around
+	jmp r_ex_l
+	
+	
+r_ex_e:
+	mov sp, bp
+	pop bp
+	ret
+
+#+END_SRC

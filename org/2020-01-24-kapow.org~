@@ -1,0 +1,52 @@
+#+OPTIONS: toc:nil num:0 \n:true
+#+STARTUP: showall indent
+#+STARTUP: hidestars
+#+BEGIN_export html
+---
+layout: post
+title: Kapow - Making a Game in Real-Mode x86 Assembly (Part 1)
+---
+#+END_export
+* Introduction
+If you are a /real programmer/ and following in the footsteps of [[https://templeos.org][Terry A. Davis]], no doubt you are familiar with Assembly Language. For those of you who are not yet there, I present to you this post, where I detail the inner functioning of some of the parts of my game /Kapow/.
+
+/Kapow/ is a remake of /Kaboom!/ (1981) for the Atari 2600. It is made to run on an x86 machine without an operating system, and does so exclusively in 16 bit real-mode. It was originally made as a bonus assignment for the class CSE1400 at TU Delft. The source code is available at [[https://github.com/fayalalebrun/kapow][Github]].
+* Assumptions
+In this post, I will assume that you grasp the basics of either x86 assembly or some other assembly language, and thus I won't spend any time explaining this.
+* Tooling
+- [[https://nasm.us/][NASM]]: Assembler used to transform the source into binary.
+- [[https://www.qemu.org/][QEMU]]: x86 Emulator used in order to run and debug the program.
+- [[https://www.dosbox.com/][DOSBox]]: DOS emulator used in order to run /Deluxe Paint/, which was needed to create Mode 13h compatible assets.
+* Program Structure
+** Bootloader
+This is the part of the program which takes care of setting the correct video mode, loading the data into memory, setting the correct timer rate, and finally jumping into the main program.
+- Related files: bootup/booter.asm
+** Initialization and main loop
+Here all of the game's subsystems are started, and the main loop can be found at *timer_irq*
+- Related files: game/game.asm
+** Stage Handling
+Depending on the current state of the game, different things must be rendered, and likewise the player's input must be handled differently. This part takes care of these two things for each stage, providing initialization and main loops for each stage.
+- Related files: game/stage.asm
+** Logic
+Checks for collisions between paddle and bombs, updates the bomber and bombs. Handles paddle player input.
+- Related files: game/paddle.asm, game/bombs.asm, game/bomber.asm, game/collision\under{}detection.asm
+** Sound
+Handles playing of simple PC Speaker sounds and does so with the correct duration.
+- Related files: game/sound.asm
+** Renderer
+Contains all of the functions for rendering basic things like sprites to the screen, as well as takes care of rendering all of the elements of the game.
+- Related files: game/renderer.asm, game/2dgfx.asm
+** Input handling
+Keeps track of whether a key is pressed at any given moment, for other functions to employ.
+- Related files: game/keyboard.asm
+** Score keeping
+Continually updates the score, as well as the top score, using both a doubleword and BCD format.
+- Related files: game/score.asm
+** Animation system
+Creates and continually updates the explosion animations on screen.
+- Related files: game/explosion.asm
+** Game constants and variables
+Keeps track of game constants and the location of various variables, as well as the location of sprites.
+- Related files: game/game\under{}constants.asm, game/var\under{}locs.asm, game/sprite\under{}constants.asm
+
+

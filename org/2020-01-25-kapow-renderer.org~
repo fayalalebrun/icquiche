@@ -1,0 +1,207 @@
+#+OPTIONS: toc:nil num:0 \n:true
+#+STARTUP: showall indent
+#+STARTUP: hidestars
+#+BEGIN_export html
+---
+layout: post
+title: Kapow - Renderer (Part 4)
+---
+#+END_export
+In the late 80's and early 90's, when Real Mode was still in widespread use, the most common piece of graphics hardware found on a PC was the [[https://wiki.osdev.org/VGA_Hardware][VGA Chip]]. To this day, practically every single GPU implements its functionality, and it is supported by most emulators, including QEMU. The card offers a variety of modes, but the most popular of them was the well-known [[https://en.wikipedia.org/wiki/Mode_13h][Mode 13h]].
+
+* Mode 13h
+Due to its relative ease of use through BIOS calls when in Real Mode, Mode 13h was chosen as the graphics mode for /Kapow/. It is easy to set by calling a BIOS interrupt in the following way:
+#+BEGIN_SRC nasm
+        mov ax, 0x13		
+	int 0x10		
+#+END_SRC
+As can be seen here, Mode 13h gets its name from the value put into ~ax~ to set it, 13 hexadecimal.
+** Drawing
+Once this is done, the screen can be written to as a linear buffer, in the segment ~0xA0000~. The screen is sized at 320x200 pixels, taking up an entire segment of memory (64 kilobytes). Each byte represents a single pixel, the value of which is an index in the palette, which will be discussed later.
+
+Since this is a linear framebuffer, the following equation could be used in order to draw a pixel at a certain x and y in the screen.
+\begin{equation}
+o = x+y*320
+\end{equation}
+Where $o$ is the offset from ~0xA0000~ and $x$,$y$ are your desired coordinates.
+
+From this equation, a function like this could be used in order to write a single pixel to a desired location:
+#+BEGIN_SRC nasm
+; Draws a pixel on the screen
+; al - color
+; bx - x-coordinate
+; cx - y-coordinate
+put_pixel:
+	push bp
+	mov bp, sp
+
+	push ax
+	mov ax, 320
+	mul cx
+	add bx, ax
+	pop ax
+	
+	mov dx, 0xA000 ; This is used to set the segment register, so only the last 4 bits are of use.
+	mov gs, dx
+	mov [gs:bx], al
+	
+	mov sp, bp
+	pop bp
+	ret
+#+END_SRC
+** The Palette
+As you might imagine, given that we are using one byte per pixel, that greatly limits the amount of color information we can use. If we were to use an RGB representation, for example, we would only have around 2.5 bits per component.
+
+In order to solve this, Mode 13h operates in something called indexed color mode, where the value of each byte represents not color information directly, but instead an index in an array of colors. By default, the BIOS loads some colors into the VGA chip, but if we want to use artwork of any quality, it is a good idea to customize the colors to our liking.
+
+Setting a color in the palette involves direct communication with the VGA card. This might sound complicated but in reality is quite simple. /Kapow/ implements this in the following way:
+#+BEGIN_SRC nasm
+; Sets an index in a palette to a color
+; ah - index
+; bl - red (0-63)
+; bh - green (0-63)
+; cl - blue (0-63)
+set_palette_index:
+	push bp
+	mov bp, sp
+	
+	mov al, 0xFF
+	mov dx, 0x3C6 		; PEL Mask Register
+	out dx, al		; Prepare VGA card for color change
+
+	mov al, ah
+	mov dx, 0x3C8		; PEL Address Write Mode Register
+	out dx, al		; Send what color index to write to
+
+	mov dx, 0x3C9		; PEL Data Register
+
+	mov al, bl
+	out dx, al
+
+	mov al, bh
+	out dx, al
+
+	mov al, cl
+	out dx, al
+
+	
+	
+	mov sp, bp
+	pop bp
+	ret
+#+END_SRC
+It is worth noting that when uploading colors into the palette, the VGA card only cares about the first 6 bits of the byte giving, discarding the last two. That is why their value is denoted as ~0-63~.
+
+So for example, if we were to set index 163 to a color of our liking, whenever 163 is encountered in a byte in our framebuffer, it would be drawn as the color we specified.
+
+** VSync
+If you were to directly write to the framebuffer and had moving elements, you would notice severe screen tearing. This can be solved by buffering the contents of your screen before writing it to the VGA chip, and synchronizing it to your to the video signal, to ensure no writing is done while screen is being refreshed.
+
+To do this, you must first write the screen's contents to another segment, for example ~0x70000~, instead of directly to ~0xA0000~. Then, you can copy the contents of the temporary buffer to the actual framebuffer.
+
+But before you write to the VGA's memory, you must make sure that the screen is not currently being refreshed. This can be done by querying the VGA card, and waiting if this is the case. This can be done in the following way:
+#+BEGIN_SRC nasm
+vt_set:
+	in al, dx
+	and al, 8
+	jnz vt_set
+
+vt_clr:                  
+	in al, dx
+	and al, 8
+	jz vt_clr
+
+#+END_SRC
+
+After that, to perform the copying, a routine similar to this one could be used:
+#+BEGIN_SRC nasm
+copy_buffer:
+	push bp
+	mov bp, sp
+
+	mov cx, 0x7000
+	mov ds, cx
+	xor si, si             ;ds:si = source
+
+	mov cx, 0xa000
+	mov es, cx
+	xor di, di             ;es:di = destination
+	
+	mov cx, 32000    	;32k words to fill the screen
+	
+	mov dx, 0x3da           ; VGA status register
+
+	rep movsw
+	
+	mov sp, bp
+	pop bp
+	ret
+#+END_SRC
+* /Kapow/'s Renderer
+** Drawing Sprites
+In a game, it is very important to be able to draw sprites. One might even say, it is imperative. In order to draw a sprite, /Kapow/ iterates through the sprite data and places pixel by pixel in the correct area. The value ~0xFF~ is taken as a transparent pixel and thus this value is not written. The code for this is as follows:
+#+BEGIN_SRC nasm
+; Draws a sprite
+; ax - y-position
+; bx - x-position
+; ch - width
+; cl - height
+; dx - sprite location
+draw_sprite:
+	push bp
+	mov bp, sp
+
+	push dx ; Save sprite location
+	mov dx, screen_width
+	mul dx ; Multiply y position with screen width (320), to get offset
+	add bx, ax ; Add offset to x, to get absolute start location
+
+	mov ax, vga_mem
+	mov es, ax
+	mov ax, sprite_seg
+	mov gs, ax ; Set up segments where transfers will occur. From sprite_seg to vga_mem
+		
+	pop ax ; Put saved sprite location in ax
+	xor dx, dx 
+	mov dl, cl ; Move height to dl
+
+	shr cx, 8 ; Shift cx right 8 places, effcetively putting width in cl
+	
+	
+	push cx ; Save width
+ds1:
+	push ax ; Save sprite location + offset
+	push bx ; Save current offset position
+	mov bx, ax ; Move sprite location to bx
+	mov al, [gs:bx] ; Move sprite's pixel value to al
+	pop bx ; Reload bx with offset positon
+	cmp al, 0xFF ; Check if pixel should be transparent
+	je dssk ; If so, don't place the pixel
+	mov [es:bx], al
+dssk:
+	pop ax ; Restore sprite location + offset
+	inc bx ; increase offset in gfx buffer
+	inc ax ; Increase sprite offset
+	
+	loop ds1 ; Continue looping until done with this row of pixels in sprite
+	dec dx ; One less row to go
+	cmp dx, 0 ; Check if all rows done
+	jz dsd ; Jump if done
+	pop cx ; Restore sprite width
+	push cx ; Save sprite width
+	add bx, screen_width ; Add screen width to the offset, going to the next row
+	sub bx, cx ; Subtract sprite width from bx, to arrive at the correct column
+
+	jmp ds1
+
+dsd:	pop cx
+
+	
+	
+	mov sp, bp
+	pop bp
+	ret
+
+#+END_SRC
+** Drawing Animations
+How animations are drawn in /Kapow/ will be explained in more detail in a later post.

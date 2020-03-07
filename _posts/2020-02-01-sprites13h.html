@@ -1,0 +1,142 @@
+---
+layout: post
+title: Kapow - Creating Sprites for Mode 13h (Part 5)
+categories: [kapow]
+---
+
+<p>
+Sprite creation is normally a straight forward process. Draw some sprites in GIMP, export them, load them in. However, when making a bootloaded game in Assembly using Mode 13h, a few problems arise.<br />
+</p>
+
+<div id="outline-container-orgbfbf982" class="outline-2">
+<h2 id="orgbfbf982">Problems</h2>
+<div class="outline-text-2" id="text-orgbfbf982">
+<ul class="org-ul">
+<li>No available libraries means that if you want to support a certain file format, you have to write the procedures needed to convert that into something you can send to the framebuffer.<br /></li>
+<li>Mode 13h works in 256 indexed-color mode, which is not trivial to work with in something like GIMP.<br /></li>
+<li>Perhaps most importantly, Mode 13h does not provide square pixels. 320x200 is stretched into 4:3 aspect ratio. So what you would see in something like GIMP would not be the same as what is drawn onto the screen.<br /></li>
+</ul>
+</div>
+</div>
+
+<div id="outline-container-org9303b20" class="outline-2">
+<h2 id="org9303b20">Asset production pipeline</h2>
+<div class="outline-text-2" id="text-org9303b20">
+<p>
+Making assets and preparing them for usage in <i>Kapow</i> consists of three steps:<br />
+</p>
+<ul class="org-ul">
+<li>Creating graphics<br /></li>
+<li>Converting image to BMP<br /></li>
+<li>Converting BMP to easy-to-parse binary format.<br /></li>
+</ul>
+</div>
+
+<div id="outline-container-orge3c36ad" class="outline-3">
+<h3 id="orge3c36ad">Creating graphics</h3>
+<div class="outline-text-3" id="text-orge3c36ad">
+<p>
+Graphics for <i>Kapow</i> were created in a program called Deluxe Paint.<br />
+</p>
+
+<img src="/assets/dp_000.png" style="margin-bottom:2vh;"/>
+
+
+<p>
+Deluxe Paint was one of the most popular programs for sprite creation in the early 90's. In fact, it still accomplishes this quite well. It does not suffer from the problem of pixels having the incorrect aspect ratio, as the pixels are actually displayed in Mode 13h, and the program is specifically tailored for creating sprites for this mode.<br />
+</p>
+
+<p>
+There is still a problem, however. The most modern image format Deluxe Paint can support is PCX.<br />
+</p>
+</div>
+</div>
+
+<div id="outline-container-org2c89ec3" class="outline-3">
+<h3 id="org2c89ec3">From PCX to BMP</h3>
+<div class="outline-text-3" id="text-org2c89ec3">
+<p>
+PCX is not a very ideal image format for our purposes. Firstly, it is quite outdated, and secondly it is RLE encoded, which makes it slightly more complicated to decompress. This is easily fixed by a single line in the <code>Makefile</code>, which uses the <code>convert</code> utility in order to convert each image from PCX to uncompressed BMP:<br />
+</p>
+<div class="org-src-container">
+<pre class="src src-makefile">convert -compress none assets/$(<span style="color: #7fffd4;">1</span>).PCX out/assets/$(<span style="color: #7fffd4;">1</span>).bmp
+</pre>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org95b3b6b" class="outline-3">
+<h3 id="org95b3b6b">From BMP to Binary</h3>
+<div class="outline-text-3" id="text-org95b3b6b">
+<p>
+BMP is as simple as it gets with image formats. However, there are two problems:<br />
+</p>
+<ul class="org-ul">
+<li>BMP contains a header as well as palette information, which represents useless data for us. We want to conserve as much memory as we can.<br /></li>
+<li>The pixels are stored from left to right, from bottom to top. Having this representation would complicate the routines to draw sprites onto the screen.<br /></li>
+</ul>
+<p>
+Thus, in the interest of saving space and preventing headaches, the files are all converted into a binary format. This happens in the next line of the Makefile:<br />
+</p>
+<div class="org-src-container">
+<pre class="src src-makefile">out/conv_asset.o out/assets/$(<span style="color: #7fffd4;">1</span>).bmp out/assets/$(<span style="color: #7fffd4;">1</span>).bin $(<span style="color: #7fffd4;">2</span>) $(<span style="color: #7fffd4;">3</span>)
+</pre>
+</div>
+<p>
+This line calls a compiled C script, which can be found in <code>src/assets/conv_asset.c</code>. Here is the most important part of the script, annotated:<br />
+</p>
+<div class="org-src-container">
+<pre class="src src-c"><span style="color: #00ffff;">struct</span> <span style="color: #63b8ff;">BMPHeader</span> <span style="color: #7fffd4;">head</span>; <span style="color: #fa8072;">// </span><span style="color: #ff7f24; font-style: italic;">Creates a struct of type BMPHeader (defined earlier) to hold the header information</span>
+
+fread(&amp;head, <span style="color: #00ffff;">sizeof</span>(head), 1, source); <span style="color: #fa8072;">// </span><span style="color: #ff7f24; font-style: italic;">Reads header information into the header struct</span>
+
+<span style="color: #00fa9a; font-size: 110%; font-weight: bold;">skip_bytes</span>(head.offset-<span style="color: #00ffff;">sizeof</span>(head), source); <span style="color: #fa8072;">// </span><span style="color: #ff7f24; font-style: italic;">Goes to the part of the file where the pixel data is stored</span>
+
+
+<span style="color: #63b8ff;">char</span> <span style="color: #7fffd4;">out</span>[height][width]; <span style="color: #fa8072;">// </span><span style="color: #ff7f24; font-style: italic;">Creates an array to hold the pixel data</span>
+
+<span style="color: #fa8072;">// </span><span style="color: #ff7f24; font-style: italic;">The next part reads from the BMP in the way that the data is stored</span>
+<span style="color: #00ffff;">for</span>(<span style="color: #63b8ff;">int</span> <span style="color: #7fffd4;">i</span> = height-1; i &gt;= 0; i--){ <span style="color: #fa8072;">// </span><span style="color: #ff7f24; font-style: italic;">From bottom to top</span>
+  <span style="color: #00ffff;">for</span>(<span style="color: #63b8ff;">int</span> <span style="color: #7fffd4;">z</span> = 0; z &lt; width; z++){ <span style="color: #fa8072;">//</span><span style="color: #ff7f24; font-style: italic;">From left to right</span>
+    out[i][z] = fgetc(source);
+  }
+}
+
+<span style="color: #fa8072;">// </span><span style="color: #ff7f24; font-style: italic;">This part writes back to the new file, now stored in a more regular way</span>
+<span style="color: #00ffff;">for</span>(<span style="color: #63b8ff;">int</span> <span style="color: #7fffd4;">i</span> = 0; i &lt; height; i++){ <span style="color: #fa8072;">// </span><span style="color: #ff7f24; font-style: italic;">From top to bottom</span>
+  <span style="color: #00ffff;">for</span>(<span style="color: #63b8ff;">int</span> <span style="color: #7fffd4;">z</span> = 0; z &lt; width; z++){ <span style="color: #fa8072;">// </span><span style="color: #ff7f24; font-style: italic;">From left to right</span>
+    fputc(out[i][z], output);
+  }
+}
+</pre>
+</div>
+</div>
+</div>
+<div id="outline-container-org40c52a4" class="outline-3">
+<h3 id="org40c52a4">Storing the sprites</h3>
+<div class="outline-text-3" id="text-org40c52a4">
+<p>
+Finally the <code>Makefile</code> writes to the disk image, making the data available to be used in the game.<br />
+</p>
+<div class="org-src-container">
+<pre class="src src-makefile">cat out/assets/$(<span style="color: #7fffd4;">1</span>).bin &gt;&gt; out/HD.img
+</pre>
+</div>
+</div>
+</div>
+</div>
+<div id="outline-container-org6f67940" class="outline-2">
+<h2 id="org6f67940">Extracting the palette</h2>
+<div class="outline-text-2" id="text-org6f67940">
+<p>
+The palette is extracted in a very similar way to how image data is extracted. However, this only has to be done once, due to how only a single palette is needed for all of the images. The relevant lines in the <code>Makefile</code> are the following:<br />
+</p>
+<div class="org-src-container">
+<pre class="src src-makefile">gcc -o out/extract_palette.o src/assets/extract_palette.c
+convert -compress none assets/PALETTE.PCX out/assets/PALETTE.bmp
+out/extract_palette.o out/assets/PALETTE.bmp out/assets/palette.bin
+cat out/assets/palette.bin &gt;&gt; out/HD.img
+</pre>
+</div>
+</div>
+</div>
