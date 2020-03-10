@@ -10,6 +10,10 @@ categories: [kapow]
 #+END_export
 * Introduction
 /Kapow/ is a remake of /Kaboom!/ (1981) for the Atari 2600. It is made to run on an x86 machine without an operating system, and does so exclusively in 16 bit real-mode. It was originally made as a bonus assignment for the class CSE1400 at TU Delft. The source code is available at [[https://github.com/fayalalebrun/kapow][Github]].
+
+#+BEGIN_export html
+<img src="https://media.giphy.com/media/gg2ntyu3R7a5IJhWBc/giphy.gif" style="margin-bottom:2vh;"/>
+#+END_export
 * Assumptions
 In these posts, I will assume that you grasp the basics of either x86 assembly or some other assembly language, and thus I won't spend any time explaining this.
 * Tooling
