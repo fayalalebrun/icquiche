@@ -1,0 +1,288 @@
+---
+layout: post
+title: Making a peer-to-peer multiplayer game - OpenRISK
+categories: [openrisk]
+---
+
+<img src="/assets/openrisk_logo.svg" style="margin-bottom:2vh;width:100vmin;"/>
+
+<p>
+Play <a href="http://open-risk.herokuapp.com">OpenRISK</a><br />
+</p>
+
+<div id="outline-container-org6825f42" class="outline-2">
+<h2 id="org6825f42">Introduction</h2>
+<div class="outline-text-2" id="text-org6825f42">
+<p>
+I have never used JavaScript before now. The main reason for this is that I, like many others, always wrote it off as being a <a href="https://web.mit.edu/humor/Computers/real.programmers">"Quiche"</a> language, in the same vein as Python, Scratch, and Visual Basic. I still think this idea has some merit, but after considering how prevalent JavaScript is in the web I decided to take the plunge and learn it.<br />
+</p>
+
+<p>
+Now, I hear you getting up from your seat and hollering, <i>Quiche!</i>, <i>How could you, what happened to the Church of Emacs!?</i>, but bear with me, as I did not do this without first having been subject to utmost coercion of the worst type. By this I mean, much like my last project, Kapow, I did this as part of my university education. We had to make a simple board game, but as usual, I went slightly overboard.<br />
+</p>
+</div>
+</div>
+
+<div id="outline-container-org7de480f" class="outline-2">
+<h2 id="org7de480f">The Idea</h2>
+<div class="outline-text-2" id="text-org7de480f">
+<p>
+One day, I was playing a game of <i>Risk</i> with two of my friends. As my vast army invaded Europe from America, a single thought crept into my mind,<br />
+</p>
+
+<p>
+<i>You know what could make this better?</i><br />
+</p>
+
+<p>
+<i>Emacs?</i>, the left side of my brain replied.<br />
+</p>
+
+<p>
+<i>No, if it was on a computer and had multiplayer!</i><br />
+</p>
+
+<p>
+Now, looking back at this it turns out it's not really better to play <i>Risk</i> in front of a screen instead of in front of your friends. But I did not realize that until I had finished the game, so bear with me.<br />
+</p>
+</div>
+</div>
+
+<div id="outline-container-org0ef6d31" class="outline-2">
+<h2 id="org0ef6d31">The Source Code</h2>
+<div class="outline-text-2" id="text-org0ef6d31">
+<p>
+The entire source code for this project is available in <a href="https://github.com/fayalalebrun/OpenRISK">Github</a>.<br />
+</p>
+
+<p>
+If you're looking at the directory of the project, you better head over to <code>public/scripts</code>, that's where all of the significant client-side code is stored. The entry point for the game is in <code>public/play.js</code>.<br />
+</p>
+</div>
+</div>
+
+<div id="outline-container-org5f25b22" class="outline-2">
+<h2 id="org5f25b22">Peer to Peer Multiplayer</h2>
+<div class="outline-text-2" id="text-org5f25b22">
+<p>
+So the game is technically not peer to peer, as the server is used as a relay to pass messages from client to client. However, it practically functions as peer to peer. The main mechanisms to communicate from client to client are defined in <code>multiplayer/playerEventSource.js</code>.<br />
+</p>
+
+<div class="org-src-container">
+<pre class="src src-js"><span style="color: #00ffff;">export</span> <span style="color: #00ffff;">class</span> PlayerEventSource{
+
+    <span style="color: #f08080; font-style: italic;">/**</span>
+<span style="color: #f08080; font-style: italic;">     * </span>
+<span style="color: #f08080; font-style: italic;">     * @param {function} callback Will be called whenever an event is fired. </span>
+<span style="color: #f08080; font-style: italic;">     */</span>
+    constructor(callback){
+        <span style="color: #8470ff; font-weight: bold;">this</span>.callback = callback;
+    }
+
+    <span style="color: #f08080; font-style: italic;">/**</span>
+<span style="color: #f08080; font-style: italic;">      * @abstract </span>
+<span style="color: #f08080; font-style: italic;">      */</span>
+    sendMessage(msg){}
+
+    <span style="color: #fa8072;">//</span><span style="color: #ff7f24; font-style: italic;">returns whether client should disconnect.</span>
+    onPlayerLeftGame(id){
+        <span style="color: #00ffff;">return</span> <span style="color: #8470ff; font-weight: bold;">true</span>;
+    }
+}
+</pre>
+</div>
+
+
+<p>
+Put into words, this is an interface that defines a <code>callback</code> to be called when a message is received and a method <code>sendMessage</code> which is used to send a message (More specifically a JavaScript object) to every other peer.<br />
+</p>
+
+<p>
+The actual implementation of this is located in <code>multiplayer/webSocketPlayerEventSource.js</code>.<br />
+</p>
+
+<div class="org-src-container">
+<pre class="src src-js"><span style="color: #00ffff;">export</span> <span style="color: #00ffff;">class</span> WebSocketPlayerEventSource <span style="color: #00ffff;">extends</span> PlayerEventSource {
+    constructor(callback, socket){
+        <span style="color: #00ffff;">super</span>(callback);
+        <span style="color: #8470ff; font-weight: bold;">this</span>.socket = socket;
+        setTimeout(()=&gt;{socket.send(JSON.stringify({heartbeat:<span style="color: #8470ff; font-weight: bold;">true</span>}))},500);
+        socket.onmessage = ((event)=&gt;{
+            <span style="color: #00ffff;">let</span> <span style="color: #7fffd4;">msg</span> = JSON.parse(event.data);
+            <span style="color: #00ffff;">if</span>(msg.playerMessage){
+                callback(msg.playerMessage);
+            } <span style="color: #00ffff;">else</span> <span style="color: #00ffff;">if</span> (msg.playerLeftGame!=<span style="color: #8470ff; font-weight: bold;">undefined</span>) {
+                console.log(<span style="color: #ffc1c1;">'Player left game, closing socket'</span>);
+                <span style="color: #00ffff;">if</span>(<span style="color: #8470ff; font-weight: bold;">this</span>.onPlayerLeftGame(msg.playerLeftGame)){            
+                    socket.close();
+                }
+
+            } <span style="color: #00ffff;">else</span> <span style="color: #00ffff;">if</span>(msg.heartbeat){
+                setTimeout(()=&gt;{socket.send(JSON.stringify({heartbeat:<span style="color: #8470ff; font-weight: bold;">true</span>}))},5000);
+
+
+            } <span style="color: #00ffff;">else</span> {
+                console.log(<span style="color: #ffc1c1;">'Received non-supported message: '</span>);
+                console.log(msg);
+            }
+        });
+    }
+
+
+
+    sendMessage(msg){
+        <span style="color: #8470ff; font-weight: bold;">this</span>.socket.send(JSON.stringify({playerMessage:msg}));
+    }
+}
+</pre>
+</div>
+</div>
+
+<div id="outline-container-org727375f" class="outline-3">
+<h3 id="org727375f">The State Machine</h3>
+<div class="outline-text-3" id="text-org727375f">
+<p>
+If you're familiar with the game of <i>Risk</i>, you might know that a game consists of several stages, with placing units, fortifying, attacking, etc. Many <i>Risk</i> implementations on the net get around this by modifying the rules to allow players to perform all of these actions at the same time.<br />
+</p>
+
+<p>
+Here is a diagram which shows all of these actions in a type of state graph:<br />
+</p>
+
+<img src="/assets/openrisk-state.jpg" style="margin-bottom:2vh;"/>
+
+<p>
+All of this must be done for every player, until a winner is found.<br />
+</p>
+
+<p>
+When looking at this, first I recognized how in each state the actions which might be taken by the user are greatly distinct. Due to this, I decided to compartmentalize the code, as I thought it would be much easier to handle (And it was).<br />
+</p>
+
+<p>
+This brings me to the next interface, at <code>game/stage_handling/stageHandler.js</code>:<br />
+</p>
+
+<div class="org-src-container">
+<pre class="src src-js"><span style="color: #00ffff;">export</span> <span style="color: #00ffff;">class</span> StageHandler {
+
+    <span style="color: #f08080; font-style: italic;">/**</span>
+<span style="color: #f08080; font-style: italic;">     * @abstract </span>
+<span style="color: #f08080; font-style: italic;">     */</span>
+    <span style="color: #00ffff;">static</span> onPlayerEvent(event){}    
+
+    <span style="color: #f08080; font-style: italic;">/**</span>
+<span style="color: #f08080; font-style: italic;">     * @abstract </span>
+<span style="color: #f08080; font-style: italic;">     */</span>
+    <span style="color: #00ffff;">static</span> handleInput(currPlayer, zone, mapView, game){}
+
+
+    <span style="color: #f08080; font-style: italic;">/**</span>
+<span style="color: #f08080; font-style: italic;">     * @abstract </span>
+<span style="color: #f08080; font-style: italic;">     */</span>
+    <span style="color: #00ffff;">static</span> select(){}    
+}
+</pre>
+</div>
+
+<p>
+Looking back, it would have been much better to name this a StateHandler, but I went with the aforementioned name, mainly because it didn't occur to me I was working with a state machine at that time.<br />
+</p>
+
+<p>
+In this class, I have three main methods. The third method <code>select</code> simply acts as an initializer, called when that state is called. The second method, <code>handleInput</code>, is called when the user clicks on a zone on the map. This method is only relevant when it is the user's turn, so usually it has no effect if this is not the case.<br />
+</p>
+</div>
+</div>
+
+<div id="outline-container-orgea9272f" class="outline-3">
+<h3 id="orgea9272f">Propagating changes</h3>
+<div class="outline-text-3" id="text-orgea9272f">
+<p>
+So <code>handleInput</code> sends out server commands, but it doesn't actually make any change to the state of the game. Instead, it makes sure this command is also sent to the client itself. Thus, the change is done on all clients simultaneously, and all of them remain in sync.<br />
+</p>
+
+<img src="/assets/openrisk-board-screen1.png" style="margin-bottom:2vh;"/>
+
+<p>
+Another advantage to this, is that it was unnecessary to create code to handle changes coming from the client and from other clients separately. Everything is treated as a request.<br />
+</p>
+</div>
+</div>
+
+<div id="outline-container-org72a1046" class="outline-3">
+<h3 id="org72a1046">Keeping dice rolls in sync</h3>
+<div class="outline-text-3" id="text-org72a1046">
+<p>
+A dice roll, as you know, is random, and <i>Risk</i> involves many dice rolls, mainly during combat. Now, if you just tried to use the JavaScript built-in random function, you would find you would have a different result every time. Normally this is intended, as who would want a random function with predictable results? However, in a peer-to-peer multiplayer game, if each player has a random function which produces different results, the game will very soon desync, as each player will for example think every battle to have a different result.<br />
+</p>
+
+<p>
+This is where <i>seeds</i> are useful. These are numbers we can use to "seed" the random function in order to produce predictable results. So we generate a random seed in one of the clients and then propagate it to the other clients.<br />
+</p>
+
+<p>
+However, JavaScript does not have this functionality by default, you are unable to seed the random function. Due to this, I used <a href="https://github.com/davidbau/seedrandom">David Bau's seedrandom.js library</a>, and that provides the functions we need for this.<br />
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-org91bbfa6" class="outline-2">
+<h2 id="org91bbfa6">Clicking on territories</h2>
+<div class="outline-text-2" id="text-org91bbfa6">
+<p>
+The question I often get when other developers look at my game is "How did you get the territory clicking to work?" Well, the answer is simple. I store two different map images. One is the image I actually use in the game, and the other I use as an aid to separate the different areas. In another JSON file I store what color corresponds to which territory.<br />
+</p>
+
+<img src="/assets/map.svg" style="margin-bottom:2vh;"/>
+
+<img src="/assets/map_zones.svg" style="margin-bottom:2vh;"/>
+
+<p>
+The algorithm whenever a player clicks basically looks as follows:<br />
+</p>
+
+<ol class="org-ol">
+<li>Render the area-defining image to an off-screen canvas.<br /></li>
+<li>Check the color of the pixel at the mouse position.<br /></li>
+<li>Find out what territory the color belongs to, via a map.<br /></li>
+<li>Pass this information to the state handler, for further processing.<br /></li>
+</ol>
+</div>
+
+<div id="outline-container-org3bf55f9" class="outline-3">
+<h3 id="org3bf55f9">Highlighting zones</h3>
+<div class="outline-text-3" id="text-org3bf55f9">
+<p>
+The zone highlighting is also an interesting topic. Like with the selecting, I also leverage this image containing different colors per zone. This time, my objective is to build a dictionary of images for each one of the territories. I do this via two passes over the source image:<br />
+</p>
+
+<ol class="org-ol">
+<li>For each zone, find out where its highest pixel is as well as its lowest pixel. From this, it is possible to know large the image has to be.<br /></li>
+<li>For each pixel on the map, depending on the size decide to which zone it corresponds to, if any.<br /></li>
+</ol>
+
+<p>
+With the pixel data now available for each zone, the image for each zone is then constructed.<br />
+</p>
+
+<p>
+Now that the images are available to me, I can simply change their color and draw them over the map. Thus achieving the highlighting effect.<br />
+</p>
+</div>
+</div>
+</div>
+
+<div id="outline-container-orgc695815" class="outline-2">
+<h2 id="orgc695815">Conclusion</h2>
+<div class="outline-text-2" id="text-orgc695815">
+<p>
+The best part about this project was probably doing the zone highlighting routine, as I used another method before which was 200 times slower. So it was very satisfying to see the difference in loading time.<br />
+</p>
+
+<p>
+I am very pleased with how the project turned out, as I managed to implement all of the features of RISK that I initially set out to do.<br />
+</p>
+</div>
+</div>
